@@ -5,7 +5,7 @@ use nom::IResult;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
-#[derive(FromPrimitive, Debug)]
+#[derive(FromPrimitive, Debug, PartialEq)]
 #[repr(u32)]
 pub enum ChunkType {
     Struct = 0x00000001,
@@ -16,7 +16,12 @@ pub enum ChunkType {
     Material = 0x00000007,
     MaterialList = 0x00000008,
     FrameList = 0x0000000E,
+    Geometry = 0x0000000F,
     Clump = 0x00000010,
+    Atomic = 0x00000014,
+    GeometryList = 0x0000001A,
+    MaterialEffectsPLG = 0x00000120,
+    BinMeshPLG = 0x0000050E,
     Frame = 0x0253F2FE,
 }
 impl ChunkType {
@@ -25,8 +30,20 @@ impl ChunkType {
             ChunkType::Struct => false,
             ChunkType::String => false,
             ChunkType::Frame => false,
+            ChunkType::BinMeshPLG => false,
+            ChunkType::MaterialEffectsPLG => false,
             _ => true,
         }
+    }
+}
+
+fn parse_chunk_content<'a>(
+    ty: &ChunkType,
+    size: u32,
+    i: &'a [u8],
+) -> IResult<&'a [u8], BsfChunkContent> {
+    match ty {
+        _ => take(size)(i).map(|(i, data)| (i, BsfChunkContent::Data(data.to_vec()))),
     }
 }
 
@@ -36,6 +53,7 @@ pub struct BsfChunk {
     pub size: u32,
     pub version: u32,
     pub content: BsfChunkContent,
+    pub children: Vec<BsfChunk>,
 }
 
 pub fn parse_bsf_chunk(i: &[u8]) -> IResult<&[u8], BsfChunk> {
@@ -44,14 +62,12 @@ pub fn parse_bsf_chunk(i: &[u8]) -> IResult<&[u8], BsfChunk> {
     let (i, size) = le_u32(i)?;
     let (i, version) = le_u32(i)?;
     let (i, data) = take(size)(i)?;
-    let content;
-    let mut i = i;
+    let mut children = Vec::new();
+    let mut content = BsfChunkContent::None;
     if ty.has_children() {
-        let (i2, res) = many0(parse_bsf_chunk)(data)?;
-        i = i2;
-        content = BsfChunkContent::Children(res);
+        (_, children) = many0(parse_bsf_chunk)(data)?;
     } else {
-        content = BsfChunkContent::Data(data.to_vec());
+        (_, content) = parse_chunk_content(&ty, size, data)?;
     }
 
     Ok((
@@ -61,14 +77,45 @@ pub fn parse_bsf_chunk(i: &[u8]) -> IResult<&[u8], BsfChunk> {
             size,
             version,
             content,
+            children,
         },
     ))
 }
 
 #[derive(Debug)]
 pub enum BsfChunkContent {
+    None,
     Data(Vec<u8>),
-    Children(Vec<BsfChunk>),
+    String(String),
+}
+
+struct RwRGBA {
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
+}
+
+struct RwTexCoords {
+    u: f32,
+    v: f32,
+}
+
+struct RpTriangle {
+    vertex2: u16,
+    vertex1: u16,
+    material_id: u16,
+    vertex3: u16,
+}
+
+struct RpGeometry {
+    format: u32,
+    num_triangles: u32,
+    num_vertices: u32,
+    num_morph: u32,
+    prelit: Vec<RwRGBA>,
+    tex_coords: Vec<RwTexCoords>,
+    triangles: Vec<RpTriangle>,
 }
 
 #[cfg(test)]
