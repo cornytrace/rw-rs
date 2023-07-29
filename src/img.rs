@@ -76,7 +76,7 @@ impl<'a> Img<'a> {
                 .seek(SeekFrom::Start(entry.offset as u64 * 2048))
                 .unwrap();
             let mut res = vec![0; entry.size as usize * 2048];
-            self.img_reader.read(&mut res).unwrap();
+            self.img_reader.read_exact(&mut res).unwrap();
             return Some(res);
         }
         None
