@@ -7,29 +7,35 @@ use rw_rs::bsf::*;
 #[derive(Component)]
 struct TheMesh;
 
+#[derive(Resource)]
+struct MeshIndex(usize);
+
+#[derive(Resource)]
+struct Meshes(Vec<Handle<Mesh>>);
+
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "DFF Viewer".into(),
+                ..default()
+            }),
+            ..default()
+        }))
         .add_systems(Startup, setup)
-        .add_systems(Update, input_handler)
+        .add_systems(Update, (input_handler, update_mesh))
         .run();
 }
 
-fn load_mesh(bsf: &BsfChunk) -> Mesh {
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+fn load_meshes(bsf: &BsfChunk) -> Vec<Mesh> {
+    let mut mesh_vec = Vec::new();
 
-    /*for geometry_chunk in &bsf
-    .children
-    .iter()
-    .find(|e| e.ty == ChunkType::GeometryList)
-    .unwrap()
-    .children[1..]*/
-    let geometry_chunk = &bsf
+    for geometry_chunk in &bsf
         .children
         .iter()
         .find(|e| e.ty == ChunkType::GeometryList)
         .unwrap()
-        .children[1];
+        .children[1..]
     {
         if let BsfChunkContent::RpGeometry(geo) = &geometry_chunk.content {
             let topo = if geo.is_tristrip() {
@@ -37,7 +43,7 @@ fn load_mesh(bsf: &BsfChunk) -> Mesh {
             } else {
                 PrimitiveTopology::TriangleList
             };
-            mesh = Mesh::new(topo);
+            let mut mesh = Mesh::new(topo);
             mesh.set_indices(Some(bevy::render::mesh::Indices::U16(
                 geo.triangles
                     .iter()
@@ -51,10 +57,11 @@ fn load_mesh(bsf: &BsfChunk) -> Mesh {
             mesh.insert_attribute(
                 Mesh::ATTRIBUTE_NORMAL,
                 geo.normals.iter().map(|t| t.as_arr()).collect::<Vec<_>>(),
-            )
+            );
+            mesh_vec.push(mesh);
         }
     }
-    mesh
+    mesh_vec
 }
 
 fn setup(
@@ -66,13 +73,20 @@ fn setup(
     let file = fs::read("player.dff").unwrap();
     let (_, bsf) = parse_bsf_chunk(&file).unwrap();
 
+    commands.insert_resource(MeshIndex(0));
+
     // Create and save a handle to the mesh.
-    let cube_mesh_handle: Handle<Mesh> = meshes.add(load_mesh(&bsf));
+    let cube_mesh_handles: Vec<Handle<Mesh>> = load_meshes(&bsf)
+        .into_iter()
+        .map(|m| meshes.add(m))
+        .collect();
+
+    commands.insert_resource(Meshes(cube_mesh_handles.clone()));
 
     // Render the mesh with the custom texture using a PbrBundle, add the marker.
     commands.spawn((
         PbrBundle {
-            mesh: cube_mesh_handle,
+            mesh: cube_mesh_handles[0].clone(),
             material: materials.add(StandardMaterial { ..default() }),
             ..default()
         },
@@ -99,13 +113,31 @@ fn setup(
         transform: camera_and_light_transform,
         ..default()
     });
+
+    commands.spawn(
+        TextBundle::from_section(
+            "Controls:\nX/Y/Z: Rotate\nR: Reset orientation\n+/-: Show different geometry in dff",
+            TextStyle {
+                font_size: 20.0,
+                ..default()
+            },
+        )
+        .with_style(Style {
+            position_type: PositionType::Absolute,
+            top: Val::Px(12.0),
+            left: Val::Px(12.0),
+            ..default()
+        }),
+    );
 }
 
 fn input_handler(
     keyboard_input: Res<Input<KeyCode>>,
     mesh_query: Query<&Handle<Mesh>, With<TheMesh>>,
-    mut meshes: ResMut<Assets<Mesh>>,
+    //mut meshes: ResMut<Assets<Mesh>>,
     mut query: Query<&mut Transform, With<TheMesh>>,
+    mut index: ResMut<MeshIndex>,
+    meshes: Res<Meshes>,
     time: Res<Time>,
 ) {
     if keyboard_input.just_pressed(KeyCode::Space) {
@@ -132,5 +164,31 @@ fn input_handler(
         for mut transform in &mut query {
             transform.look_to(Vec3::NEG_Z, Vec3::Y);
         }
+    }
+    if keyboard_input.just_pressed(KeyCode::Plus) | keyboard_input.just_pressed(KeyCode::NumpadAdd)
+    {
+        let num_meshes = meshes.0.len();
+        if index.0 < num_meshes - 1 {
+            index.0 += 1;
+        }
+    }
+    if keyboard_input.just_pressed(KeyCode::Minus)
+        | keyboard_input.just_pressed(KeyCode::NumpadSubtract)
+    {
+        if index.0 > 0 {
+            index.0 -= 1;
+        }
+    }
+}
+
+fn update_mesh(
+    mut commands: Commands,
+    mesh_query: Query<Entity, With<TheMesh>>,
+    index: Res<MeshIndex>,
+    meshes: Res<Meshes>,
+) {
+    if index.is_changed() {
+        let new_mesh = meshes.0.get(index.0).unwrap().clone();
+        commands.entity(mesh_query.single()).insert(new_mesh);
     }
 }
