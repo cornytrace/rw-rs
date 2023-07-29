@@ -1,6 +1,6 @@
 use nom::bytes::complete::take;
 use nom::multi::{count, many0};
-use nom::number::complete::le_u32;
+use nom::number::complete::{le_f32, le_u32};
 use nom::IResult;
 use nom_derive::*;
 use num_derive::FromPrimitive;
@@ -27,20 +27,21 @@ pub enum ChunkType {
 }
 impl ChunkType {
     fn has_children(&self) -> bool {
-        match self {
-            ChunkType::Struct => false,
-            ChunkType::String => false,
-            ChunkType::Frame => false,
-            ChunkType::BinMeshPLG => false,
-            ChunkType::MaterialEffectsPLG => false,
-            _ => true,
-        }
+        !matches!(
+            self,
+            ChunkType::Struct
+                | ChunkType::String
+                | ChunkType::Frame
+                | ChunkType::BinMeshPLG
+                | ChunkType::MaterialEffectsPLG
+        )
     }
 }
 
 fn parse_chunk_content<'a>(
     ty: &ChunkType,
     size: u32,
+    version: u32,
     i: &'a [u8],
 ) -> IResult<&'a [u8], BsfChunkContent> {
     match ty {
@@ -50,9 +51,8 @@ fn parse_chunk_content<'a>(
                 BsfChunkContent::String(std::str::from_utf8(data).unwrap().to_owned()),
             )
         }),
-        ChunkType::Geometry => {
-            RpGeometry::parse(i).map(|(i, geometry)| (i, BsfChunkContent::RpGeometry(geometry)))
-        }
+        ChunkType::Geometry => RpGeometry::parse(i, version)
+            .map(|(i, geometry)| (i, BsfChunkContent::RpGeometry(geometry))),
         _ => take(size)(i).map(|(i, data)| (i, BsfChunkContent::Data(data.to_vec()))),
     }
 }
@@ -61,26 +61,55 @@ fn parse_chunk_content<'a>(
 pub struct BsfChunk {
     pub ty: ChunkType,
     pub size: u32,
-    pub version: u32,
+    pub lib_id: u32,
     pub content: BsfChunkContent,
     pub children: Vec<BsfChunk>,
+}
+
+impl BsfChunk {
+    pub fn get_version(&self) -> u32 {
+        get_chunk_version(self.lib_id)
+    }
+
+    pub fn get_build(&self) -> u32 {
+        get_chunk_build(self.lib_id)
+    }
+}
+
+pub fn get_chunk_version(lib_id: u32) -> u32 {
+    if lib_id & 0xFFFF0000 != 0 {
+        return ((lib_id >> 14 & 0x3FF00) + 0x30000) | (lib_id >> 16 & 0x3F);
+    }
+    lib_id << 8
+}
+
+pub fn get_chunk_build(lib_id: u32) -> u32 {
+    if lib_id & 0xFFFF0000 != 0 {
+        return lib_id & 0xFFFF;
+    }
+    0
 }
 
 pub fn parse_bsf_chunk(i: &[u8]) -> IResult<&[u8], BsfChunk> {
     let (i, ty) = le_u32(i)?;
     let ty = ChunkType::from_u32(ty).unwrap_or_else(|| unimplemented!("0x{:08X}", ty));
     let (i, size) = le_u32(i)?;
-    let (i, version) = le_u32(i)?;
+    let (i, lib_id) = le_u32(i)?;
     let (i, data) = take(size)(i)?;
     let mut children = Vec::new();
     let mut content = BsfChunkContent::None;
     if ty.has_children() {
         (_, children) = many0(parse_bsf_chunk)(data)?;
         if !children.is_empty() && children[0].ty == ChunkType::Struct {
-            (_, content) = parse_chunk_content(&ty, children[0].size, &data[3 * 4..])?;
+            (_, content) = parse_chunk_content(
+                &ty,
+                children[0].size,
+                get_chunk_version(lib_id),
+                &data[3 * 4..],
+            )?;
         }
     } else {
-        (_, content) = parse_chunk_content(&ty, size, data)?;
+        (_, content) = parse_chunk_content(&ty, size, get_chunk_version(lib_id), data)?;
     }
 
     Ok((
@@ -88,7 +117,7 @@ pub fn parse_bsf_chunk(i: &[u8]) -> IResult<&[u8], BsfChunk> {
         BsfChunk {
             ty,
             size,
-            version,
+            lib_id,
             content,
             children,
         },
@@ -170,7 +199,7 @@ const RP_GEOMETRYTEXTURED2: u32 = 0x00000080;
 const RP_GEOMETRYNATIVE: u32 = 0x01000000;
 
 impl RpGeometry {
-    fn parse(i: &[u8]) -> IResult<&[u8], Self> {
+    fn parse(i: &[u8], version: u32) -> IResult<&[u8], Self> {
         let (i, format) = le_u32(i)?;
         let (i, num_triangles) = le_u32(i)?;
         let (i, num_vertices) = le_u32(i)?;
@@ -184,6 +213,15 @@ impl RpGeometry {
             if format & RP_GEOMETRYTEXTURED2 != 0 {
                 num_tex_sets = 2;
             }
+        }
+
+        if version < 0x34000 {
+            let _ambient;
+            let _specular;
+            let _diffuse;
+            (i, _ambient) = le_f32(i)?;
+            (i, _specular) = le_f32(i)?;
+            (i, _diffuse) = le_f32(i)?;
         }
 
         let mut prelit = Vec::new();
