@@ -66,7 +66,6 @@ fn load_meshes(bsf: &BsfChunk) -> Vec<Mesh> {
 
 fn setup(
     mut commands: Commands,
-    asset_server: ResMut<AssetServer>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
@@ -133,8 +132,6 @@ fn setup(
 
 fn input_handler(
     keyboard_input: Res<Input<KeyCode>>,
-    mesh_query: Query<&Handle<Mesh>, With<TheMesh>>,
-    //mut meshes: ResMut<Assets<Mesh>>,
     mut query: Query<&mut Transform, With<TheMesh>>,
     mut index: ResMut<MeshIndex>,
     meshes: Res<Meshes>,
@@ -174,10 +171,9 @@ fn input_handler(
     }
     if keyboard_input.just_pressed(KeyCode::Minus)
         | keyboard_input.just_pressed(KeyCode::NumpadSubtract)
+        && index.0 > 0
     {
-        if index.0 > 0 {
-            index.0 -= 1;
-        }
+        index.0 -= 1;
     }
 }
 

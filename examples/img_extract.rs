@@ -1,5 +1,5 @@
 use std::{
-    fs::{self, File},
+    fs::{self},
     path::PathBuf,
 };
 
@@ -20,7 +20,7 @@ fn main() -> Result<()> {
     let mut img = Img::new(&args.input)?;
     if let Some(file) = img.get_file(&args.name) {
         fs::write(args.output.unwrap_or(args.name.into()), file)?;
-        return Ok(());
+        Ok(())
     } else {
         bail!("File not found in img");
     }
