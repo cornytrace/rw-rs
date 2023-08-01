@@ -12,19 +12,19 @@ use binrw::BinRead;
 
 use anyhow::Result;
 
-pub trait ReadSeek: Read + Seek {}
-impl<T: Read + Seek> ReadSeek for T {}
+pub trait ReadSeek: Read + Seek + Send + Sync {}
+impl<T: Read + Seek + Send + Sync> ReadSeek for T {}
 
 pub struct Img<'a> {
     entries: HashMap<String, DirEnt>,
     img_reader: Box<dyn ReadSeek + 'a>,
 }
 impl<'a> Img<'a> {
-    pub fn new(path: &Path) -> Result<Img> {
+    pub fn new(path: &Path) -> Result<Img<'a>> {
         if !path.extension().map_or(false, |x| x == "img") {
             bail!("File does not end in .img")
         }
-        let img_file = File::open(path)?;
+        let img_file = File::open(path.clone())?;
         let dir_path = path.with_extension("dir");
         if let Ok(mut dir_file) = File::open(dir_path) {
             return Img::from_v1(img_file, &mut dir_file);
@@ -63,7 +63,7 @@ impl<'a> Img<'a> {
     where
         R: ReadSeek,
     {
-        unimplemented!()
+        unimplemented!("V2 .IMG files (San Andreas) not yet supported")
     }
 
     pub fn get_entry(&self, name: &str) -> Option<DirEnt> {
