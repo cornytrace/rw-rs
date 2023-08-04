@@ -27,6 +27,8 @@ pub enum ChunkType {
     Clump = 0x00000010,
     Atomic = 0x00000014,
     GeometryList = 0x0000001A,
+    MorphPLG = 0x00000105,
+    ParticlesPLG = 0x00000118,
     MaterialEffectsPLG = 0x00000120,
     BinMeshPLG = 0x0000050E,
     Frame = 0x0253F2FE,
@@ -39,6 +41,8 @@ impl ChunkType {
                 | ChunkType::String
                 | ChunkType::Frame
                 | ChunkType::BinMeshPLG
+                | ChunkType::MorphPLG
+                | ChunkType::ParticlesPLG
                 | ChunkType::MaterialEffectsPLG
         )
     }
@@ -54,7 +58,7 @@ fn parse_chunk_content<'a>(
         ChunkType::String => take(size)(i).map(|(i, data)| {
             (
                 i,
-                BsfChunkContent::String(std::str::from_utf8(data).unwrap().to_owned()),
+                BsfChunkContent::String(std::str::from_utf8(data).unwrap_or("").to_owned()),
             )
         }),
         ChunkType::Geometry => RpGeometry::parse(i, version)
@@ -106,18 +110,14 @@ pub fn parse_bsf_chunk(i: &[u8]) -> IResult<&[u8], BsfChunk> {
     let (i, data) = take(size)(i)?;
     let mut children = Vec::new();
     let mut content = BsfChunkContent::None;
+    let version = get_chunk_version(lib_id);
     if ty.has_children() {
         (_, children) = many0(parse_bsf_chunk)(data)?;
         if !children.is_empty() && children[0].ty == ChunkType::Struct {
-            (_, content) = parse_chunk_content(
-                &ty,
-                children[0].size,
-                get_chunk_version(lib_id),
-                &data[3 * 4..],
-            )?;
+            (_, content) = parse_chunk_content(&ty, children[0].size, version, &data[3 * 4..])?;
         }
     } else {
-        (_, content) = parse_chunk_content(&ty, size, get_chunk_version(lib_id), data)?;
+        (_, content) = parse_chunk_content(&ty, size, version, data)?;
     }
 
     Ok((

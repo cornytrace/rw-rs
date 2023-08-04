@@ -15,6 +15,12 @@ pub struct RwTexCoords {
     pub v: f32,
 }
 
+impl RwTexCoords {
+    pub fn as_arr(&self) -> [f32; 2] {
+        [self.u, self.v]
+    }
+}
+
 #[derive(Clone, Copy, Debug, Nom)]
 pub struct RpSurfProp {
     pub ambient: f32,
