@@ -12,7 +12,7 @@ use num_traits::FromPrimitive;
 use self::geo::RpGeometry;
 use self::tex::RpMaterial;
 
-#[derive(FromPrimitive, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, FromPrimitive, PartialEq, Nom)]
 #[repr(u32)]
 pub enum ChunkType {
     Struct = 0x00000001,
@@ -69,22 +69,69 @@ fn parse_chunk_content<'a>(
     }
 }
 
-#[derive(Debug)]
-pub struct BsfChunk {
+#[derive(Copy, Clone, Debug, Nom)]
+pub struct BsfHeader {
     pub ty: ChunkType,
     pub size: u32,
     pub lib_id: u32,
-    pub content: BsfChunkContent,
-    pub children: Vec<BsfChunk>,
 }
 
-impl BsfChunk {
+impl BsfHeader {
+    pub fn parse(i: &[u8]) -> IResult<&[u8], BsfHeader> {
+        let (i, ty) = le_u32(i)?;
+        let ty = ChunkType::from_u32(ty).unwrap_or_else(|| unimplemented!("0x{:08X}", ty));
+        let (i, size) = le_u32(i)?;
+        let (i, lib_id) = le_u32(i)?;
+
+        Ok((i, BsfHeader { ty, size, lib_id }))
+    }
+
     pub fn get_version(&self) -> u32 {
         get_chunk_version(self.lib_id)
     }
 
     pub fn get_build(&self) -> u32 {
         get_chunk_build(self.lib_id)
+    }
+}
+
+#[derive(Debug)]
+pub struct BsfChunk {
+    pub header: BsfHeader,
+    pub content: BsfChunkContent,
+    pub children: Vec<BsfChunk>,
+}
+
+impl BsfChunk {
+    pub fn parse(i: &[u8]) -> IResult<&[u8], BsfChunk> {
+        let (i, header) = BsfHeader::parse(i)?;
+        let (i, data) = take(header.size)(i)?;
+        let mut children = Vec::new();
+        let mut content = BsfChunkContent::None;
+        let version = get_chunk_version(header.lib_id);
+
+        if header.ty.has_children() {
+            (_, children) = many0(BsfChunk::parse)(data)?;
+            if !children.is_empty() && children[0].header.ty == ChunkType::Struct {
+                (_, content) = parse_chunk_content(
+                    &header.ty,
+                    children[0].header.size,
+                    version,
+                    &data[3 * 4..],
+                )?;
+            }
+        } else {
+            (_, content) = parse_chunk_content(&header.ty, header.size, version, data)?;
+        }
+
+        Ok((
+            i,
+            BsfChunk {
+                header,
+                content,
+                children,
+            },
+        ))
     }
 }
 
@@ -100,36 +147,6 @@ pub fn get_chunk_build(lib_id: u32) -> u32 {
         return lib_id & 0xFFFF;
     }
     0
-}
-
-pub fn parse_bsf_chunk(i: &[u8]) -> IResult<&[u8], BsfChunk> {
-    let (i, ty) = le_u32(i)?;
-    let ty = ChunkType::from_u32(ty).unwrap_or_else(|| unimplemented!("0x{:08X}", ty));
-    let (i, size) = le_u32(i)?;
-    let (i, lib_id) = le_u32(i)?;
-    let (i, data) = take(size)(i)?;
-    let mut children = Vec::new();
-    let mut content = BsfChunkContent::None;
-    let version = get_chunk_version(lib_id);
-    if ty.has_children() {
-        (_, children) = many0(parse_bsf_chunk)(data)?;
-        if !children.is_empty() && children[0].ty == ChunkType::Struct {
-            (_, content) = parse_chunk_content(&ty, children[0].size, version, &data[3 * 4..])?;
-        }
-    } else {
-        (_, content) = parse_chunk_content(&ty, size, version, data)?;
-    }
-
-    Ok((
-        i,
-        BsfChunk {
-            ty,
-            size,
-            lib_id,
-            content,
-            children,
-        },
-    ))
 }
 
 #[derive(Debug)]
@@ -152,7 +169,7 @@ mod tests {
     #[test]
     fn it_works() -> Result<()> {
         let file = fs::read("player.dff")?;
-        let (_, dff) = parse_bsf_chunk(&file).unwrap();
+        let (_, dff) = BsfChunk::parse(&file).unwrap();
         dbg!(dff);
         Ok(())
     }
