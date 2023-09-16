@@ -1,5 +1,5 @@
-mod geo;
-mod tex;
+pub mod geo;
+pub mod tex;
 
 use nom::bytes::complete::take;
 use nom::multi::many0;
@@ -10,7 +10,7 @@ use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
 use self::geo::RpGeometry;
-use self::tex::RpMaterial;
+use self::tex::{RpMaterial, RpRasterPC};
 
 #[derive(Copy, Clone, Debug, FromPrimitive, PartialEq, Nom)]
 #[repr(u32)]
@@ -26,6 +26,8 @@ pub enum ChunkType {
     Geometry = 0x0000000F,
     Clump = 0x00000010,
     Atomic = 0x00000014,
+    Raster = 0x00000015,
+    TextureDictionary = 0x00000016,
     GeometryList = 0x0000001A,
     MorphPLG = 0x00000105,
     ParticlesPLG = 0x00000118,
@@ -65,6 +67,9 @@ fn parse_chunk_content<'a>(
             .map(|(i, geometry)| (i, BsfChunkContent::RpGeometry(geometry))),
         ChunkType::Material => RpMaterial::parse(i, version)
             .map(|(i, material)| (i, BsfChunkContent::RpMaterial(material))),
+        ChunkType::Raster => {
+            RpRasterPC::parse(i, version).map(|(i, raster)| (i, BsfChunkContent::RpRaster(raster)))
+        }
         _ => take(size)(i).map(|(i, data)| (i, BsfChunkContent::Data(data.to_vec()))),
     }
 }
@@ -156,6 +161,7 @@ pub enum BsfChunkContent {
     String(String),
     RpGeometry(RpGeometry),
     RpMaterial(RpMaterial),
+    RpRaster(RpRasterPC),
 }
 
 #[cfg(test)]
