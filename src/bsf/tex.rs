@@ -14,6 +14,12 @@ pub struct RwRGBA {
     pub a: u8,
 }
 
+impl RwRGBA {
+    pub fn as_arr(&self) -> [f32; 4] {
+        [self.r.into(), self.g.into(), self.b.into(), self.a.into()]
+    }
+}
+
 #[derive(Clone, Copy, Debug, Nom)]
 pub struct RwTexCoords {
     pub u: f32,
