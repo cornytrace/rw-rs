@@ -236,3 +236,6 @@ impl RpRasterPC {
         ))
     }
 }
+
+#[derive(Clone, Copy, Debug, Nom)]
+pub struct RpRasterPalette<const N: usize>(pub [RwRGBA; N]);
