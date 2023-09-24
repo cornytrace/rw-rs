@@ -171,9 +171,11 @@ impl RpRasterPC {
         let addr_l = TextureAddressingMode::from_u8((addr & 0b00001111) as u8).unwrap();
         let addressing = [addr_h, addr_l];
         let (i, name) = bytes::complete::take(32usize)(i)?;
-        let name = String::from_utf8_lossy(name).to_string();
+        let name = String::from_utf8_lossy(name).trim_matches('\0').to_string();
         let (i, mask_name) = bytes::complete::take(32usize)(i)?;
-        let mask_name = String::from_utf8_lossy(mask_name).to_string();
+        let mask_name = String::from_utf8_lossy(mask_name)
+            .trim_matches('\0')
+            .to_string();
         let (i, raster_format) = le_u32(i)?;
 
         let mut has_alpha = false;
