@@ -10,7 +10,7 @@ use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
 use self::geo::RpGeometry;
-use self::tex::{RpMaterial, RpRasterPC};
+use self::tex::{RpMaterial, RpMaterialList, RpRasterPC};
 
 #[derive(Copy, Clone, Debug, FromPrimitive, PartialEq, Nom)]
 #[repr(u32)]
@@ -65,6 +65,8 @@ fn parse_chunk_content<'a>(
         }),
         ChunkType::Geometry => RpGeometry::parse(i, version)
             .map(|(i, geometry)| (i, BsfChunkContent::RpGeometry(geometry))),
+        ChunkType::MaterialList => RpMaterialList::parse(i)
+            .map(|(i, material)| (i, BsfChunkContent::RpMaterialList(material))),
         ChunkType::Material => RpMaterial::parse(i, version)
             .map(|(i, material)| (i, BsfChunkContent::RpMaterial(material))),
         ChunkType::Raster => {
@@ -160,6 +162,7 @@ pub enum BsfChunkContent {
     Data(Vec<u8>),
     String(String),
     RpGeometry(RpGeometry),
+    RpMaterialList(RpMaterialList),
     RpMaterial(RpMaterial),
     RpRaster(RpRasterPC),
 }

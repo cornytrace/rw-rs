@@ -1,9 +1,12 @@
-use std::ffi::{c_char, CStr};
+use std::{
+    collections::HashMap,
+    ffi::{c_char, CStr},
+};
 
 use nom::{
     bytes,
-    character::is_alphanumeric,
-    number::complete::{le_u16, le_u32, le_u8},
+    multi::count,
+    number::complete::{le_i32, le_u16, le_u32, le_u8},
     IResult,
 };
 use nom_derive::{Nom, Parse};
@@ -32,7 +35,7 @@ pub struct RwTexCoords {
 
 impl RwTexCoords {
     pub fn as_arr(&self) -> [f32; 2] {
-        [self.u, self.v]
+        [self.u / 32.0, self.v / 32.0]
     }
 }
 
@@ -94,6 +97,34 @@ pub enum TextureAddressingMode {
     TEXTUREADDRESSBORDER,
 }
 
+#[derive(Clone, Debug)]
+pub struct RpMaterialList {
+    vec: Vec<u32>,
+}
+
+impl RpMaterialList {
+    pub fn parse(i: &[u8]) -> IResult<&[u8], Self> {
+        let (i, num_mats) = le_u32(i)?;
+        let (i, mat_vec) = count(le_i32, num_mats as usize)(i)?;
+        let mut vec = Vec::with_capacity(num_mats as usize);
+        let mut mat_count = 0;
+        for val in mat_vec {
+            if val != -1 {
+                vec.push(val as u32);
+            } else {
+                vec.push(mat_count);
+                mat_count += 1;
+            }
+        }
+
+        Ok((i, Self { vec }))
+    }
+
+    pub fn get_index(&self, material_id: u32) -> u32 {
+        *self.vec.get(material_id as usize).unwrap_or(&0)
+    }
+}
+
 pub struct RpTexture {
     pub filtering: TextureFilteringMode,
     pub addressing: [TextureAddressingMode; 2],
@@ -101,7 +132,7 @@ pub struct RpTexture {
 }
 
 impl RpTexture {
-    pub fn parse<'a>(i: &'a [u8]) -> IResult<&'a [u8], Self> {
+    pub fn parse(i: &[u8]) -> IResult<&[u8], Self> {
         let (i, filtering) = TextureFilteringMode::parse_le(i)?;
         let (i, addr) = le_u8(i)?;
         let addr_h = TextureAddressingMode::from_u8((addr & 0b11110000) >> 4).unwrap();
