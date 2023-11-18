@@ -27,17 +27,17 @@ fn main() {
         .run();
 }
 
-fn load_meshes(bsf: &BsfChunk) -> Vec<Mesh> {
+fn load_meshes(bsf: &Chunk) -> Vec<Mesh> {
     let mut mesh_vec = Vec::new();
 
-    for geometry_chunk in &bsf
-        .children
+    for geometry_chunk in bsf
+        .get_children()
         .iter()
-        .find(|e| e.ty == ChunkType::GeometryList)
+        .find(|e| matches!(e.content, ChunkContent::GeometryList))
         .unwrap()
-        .children[1..]
+        .get_children()
     {
-        if let BsfChunkContent::RpGeometry(geo) = &geometry_chunk.content {
+        if let ChunkContent::Geometry(geo) = &geometry_chunk.content {
             let topo = if geo.is_tristrip() {
                 PrimitiveTopology::TriangleStrip
             } else {
@@ -70,7 +70,7 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
     let file = fs::read("player.dff").unwrap();
-    let (_, bsf) = parse_bsf_chunk(&file).unwrap();
+    let (_, bsf) = Chunk::parse(&file).unwrap();
 
     commands.insert_resource(MeshIndex(0));
 

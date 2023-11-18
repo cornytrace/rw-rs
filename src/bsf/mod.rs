@@ -6,139 +6,139 @@ use nom::multi::many0;
 use nom::number::complete::le_u32;
 use nom::IResult;
 use nom_derive::*;
-use num_derive::FromPrimitive;
-use num_traits::FromPrimitive;
 
 use self::geo::RpGeometry;
-use self::tex::{RpMaterial, RpMaterialList, RpRasterPC};
+use self::tex::{RpMaterial, RpMaterialList, RpRasterPC, RpTexture};
 
-#[derive(Copy, Clone, Debug, FromPrimitive, PartialEq, Nom)]
+macro_rules! parse_children {
+    ($i:ident, $enum:path) => {{
+        let (i, children) = many0(Chunk::parse)($i)?;
+        Ok((i, ($enum, Some(children))))
+    }};
+}
+
+macro_rules! parse_struct_and_children {
+    ($i:ident, $version:ident, $enum:path, $struc:ty) => {{
+        let (i, children) = many0(Chunk::parse)($i)?;
+        let mut res_children = Vec::new();
+        let struc = children.into_iter().find_map(|e| match e.content {
+            Self::Struct(vec) => return Some(<$struc>::parse(&vec[..], $version).unwrap().1),
+            _ => {
+                res_children.push(e);
+                None
+            }
+        });
+
+        // TODO: proper error handling if struc is None
+        Ok((i, ($enum(struc.unwrap()), Some(res_children))))
+    }};
+}
+
+#[derive(Clone, Debug)]
 #[repr(u32)]
-pub enum ChunkType {
-    Struct = 0x00000001,
-    String = 0x00000002,
-    Extension = 0x00000003,
-    Camera = 0x00000005,
-    Texture = 0x00000006,
-    Material = 0x00000007,
-    MaterialList = 0x00000008,
-    FrameList = 0x0000000E,
-    Geometry = 0x0000000F,
-    Clump = 0x00000010,
-    Atomic = 0x00000014,
-    Raster = 0x00000015,
-    TextureDictionary = 0x00000016,
-    GeometryList = 0x0000001A,
-    MorphPLG = 0x00000105,
-    ParticlesPLG = 0x00000118,
-    MaterialEffectsPLG = 0x00000120,
-    BinMeshPLG = 0x0000050E,
-    Frame = 0x0253F2FE,
+pub enum ChunkContent {
+    Section((u32, Vec<u8>)), // For sections we can't yet parse
+    Struct(Vec<u8>), // The contents of a known section will be in that enum, this is only for child Struct sections of unknown sections
+    String(String),
+    Extension,
+    Camera,
+    Texture(RpTexture),
+    Material(RpMaterial),
+    MaterialList(RpMaterialList),
+    FrameList,
+    Geometry(RpGeometry),
+    Clump,
+    Atomic,
+    Raster(RpRasterPC),
+    TextureDictionary,
+    GeometryList,
 }
-impl ChunkType {
-    fn has_children(&self) -> bool {
-        !matches!(
-            self,
-            ChunkType::Struct
-                | ChunkType::String
-                | ChunkType::Frame
-                | ChunkType::BinMeshPLG
-                | ChunkType::MorphPLG
-                | ChunkType::ParticlesPLG
-                | ChunkType::MaterialEffectsPLG
-        )
-    }
-}
+impl ChunkContent {
+    fn parse(
+        i: &[u8],
+        ty: u32,
+        version: u32,
+    ) -> IResult<&[u8], (ChunkContent, Option<Vec<Chunk>>)> {
+        match ty {
+            0x00000001 => Ok((&[] as &[u8], (Self::Struct(i.to_vec()), None))),
+            0x00000002 => Ok((
+                &[] as &[u8],
+                (
+                    Self::String(std::str::from_utf8(i).unwrap_or("").to_owned()),
+                    None,
+                ),
+            )),
+            0x00000003 => parse_children!(i, Self::Extension),
+            0x00000005 => parse_children!(i, Self::Camera),
+            0x00000006 => parse_struct_and_children!(i, version, Self::Texture, RpTexture),
+            0x00000007 => parse_struct_and_children!(i, version, Self::Material, RpMaterial),
+            0x00000008 => {
+                parse_struct_and_children!(i, version, Self::MaterialList, RpMaterialList)
+            }
+            0x0000000E => parse_children!(i, Self::FrameList),
+            0x0000000F => parse_struct_and_children!(i, version, Self::Geometry, RpGeometry),
+            0x00000010 => parse_children!(i, Self::Clump),
+            0x00000014 => parse_children!(i, Self::Atomic),
+            0x00000015 => parse_struct_and_children!(i, version, Self::Raster, RpRasterPC),
+            0x00000016 => parse_children!(i, Self::TextureDictionary),
+            0x0000001A => parse_children!(i, Self::GeometryList),
 
-fn parse_chunk_content<'a>(
-    ty: &ChunkType,
-    size: u32,
-    version: u32,
-    i: &'a [u8],
-) -> IResult<&'a [u8], BsfChunkContent> {
-    match ty {
-        ChunkType::String => take(size)(i).map(|(i, data)| {
-            (
-                i,
-                BsfChunkContent::String(std::str::from_utf8(data).unwrap_or("").to_owned()),
-            )
-        }),
-        ChunkType::Geometry => RpGeometry::parse(i, version)
-            .map(|(i, geometry)| (i, BsfChunkContent::RpGeometry(geometry))),
-        ChunkType::MaterialList => RpMaterialList::parse(i)
-            .map(|(i, material)| (i, BsfChunkContent::RpMaterialList(material))),
-        ChunkType::Material => RpMaterial::parse(i, version)
-            .map(|(i, material)| (i, BsfChunkContent::RpMaterial(material))),
-        ChunkType::Raster => {
-            RpRasterPC::parse(i, version).map(|(i, raster)| (i, BsfChunkContent::RpRaster(raster)))
+            _ => Ok((&[] as &[u8], (Self::Section((ty, i.to_vec())), None))),
         }
-        _ => take(size)(i).map(|(i, data)| (i, BsfChunkContent::Data(data.to_vec()))),
     }
 }
 
 #[derive(Copy, Clone, Debug, Nom)]
-pub struct BsfHeader {
-    pub ty: ChunkType,
-    pub size: u32,
-    pub lib_id: u32,
+pub struct ChunkHeader {
+    pub version: u32,
+    pub build: u32,
 }
 
-impl BsfHeader {
-    pub fn parse(i: &[u8]) -> IResult<&[u8], BsfHeader> {
-        let (i, ty) = le_u32(i)?;
-        let ty = ChunkType::from_u32(ty).unwrap_or_else(|| unimplemented!("0x{:08X}", ty));
-        let (i, size) = le_u32(i)?;
+impl ChunkHeader {
+    pub fn parse(i: &[u8]) -> IResult<&[u8], ChunkHeader> {
         let (i, lib_id) = le_u32(i)?;
-
-        Ok((i, BsfHeader { ty, size, lib_id }))
-    }
-
-    pub fn get_version(&self) -> u32 {
-        get_chunk_version(self.lib_id)
-    }
-
-    pub fn get_build(&self) -> u32 {
-        get_chunk_build(self.lib_id)
-    }
-}
-
-#[derive(Debug)]
-pub struct BsfChunk {
-    pub header: BsfHeader,
-    pub content: BsfChunkContent,
-    pub children: Vec<BsfChunk>,
-}
-
-impl BsfChunk {
-    pub fn parse(i: &[u8]) -> IResult<&[u8], BsfChunk> {
-        let (i, header) = BsfHeader::parse(i)?;
-        let (i, data) = take(header.size)(i)?;
-        let mut children = Vec::new();
-        let mut content = BsfChunkContent::None;
-        let version = get_chunk_version(header.lib_id);
-
-        if header.ty.has_children() {
-            (_, children) = many0(BsfChunk::parse)(data)?;
-            if !children.is_empty() && children[0].header.ty == ChunkType::Struct {
-                (_, content) = parse_chunk_content(
-                    &header.ty,
-                    children[0].header.size,
-                    version,
-                    &data[3 * 4..],
-                )?;
-            }
-        } else {
-            (_, content) = parse_chunk_content(&header.ty, header.size, version, data)?;
-        }
 
         Ok((
             i,
-            BsfChunk {
+            ChunkHeader {
+                version: get_chunk_version(lib_id),
+                build: get_chunk_build(lib_id),
+            },
+        ))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Chunk {
+    pub header: ChunkHeader,
+    pub content: ChunkContent,
+    pub children: Option<Vec<Chunk>>,
+}
+
+impl Chunk {
+    pub fn parse(i: &[u8]) -> IResult<&[u8], Chunk> {
+        let (i, ty) = le_u32(i)?;
+        let (i, size) = le_u32(i)?;
+        let (i, header) = ChunkHeader::parse(i)?;
+        let (i, data) = take(size)(i)?;
+        let (_, (content, children)) = ChunkContent::parse(data, ty, header.version)?;
+
+        Ok((
+            i,
+            Chunk {
                 header,
                 content,
                 children,
             },
         ))
+    }
+
+    pub fn get_children(&self) -> &[Chunk] {
+        if let Some(children) = &self.children {
+            children
+        } else {
+            &[]
+        }
     }
 }
 
@@ -156,17 +156,6 @@ pub fn get_chunk_build(lib_id: u32) -> u32 {
     0
 }
 
-#[derive(Debug)]
-pub enum BsfChunkContent {
-    None,
-    Data(Vec<u8>),
-    String(String),
-    RpGeometry(RpGeometry),
-    RpMaterialList(RpMaterialList),
-    RpMaterial(RpMaterial),
-    RpRaster(RpRasterPC),
-}
-
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -178,7 +167,7 @@ mod tests {
     #[test]
     fn it_works() -> Result<()> {
         let file = fs::read("player.dff")?;
-        let (_, dff) = BsfChunk::parse(&file).unwrap();
+        let (_, dff) = Chunk::parse(&file).unwrap();
         dbg!(dff);
         Ok(())
     }

@@ -1,8 +1,3 @@
-use std::{
-    collections::HashMap,
-    ffi::{c_char, CStr},
-};
-
 use nom::{
     bytes,
     multi::count,
@@ -103,7 +98,7 @@ pub struct RpMaterialList {
 }
 
 impl RpMaterialList {
-    pub fn parse(i: &[u8]) -> IResult<&[u8], Self> {
+    pub fn parse(i: &[u8], _version: u32) -> IResult<&[u8], Self> {
         let (i, num_mats) = le_u32(i)?;
         let (i, mat_vec) = count(le_i32, num_mats as usize)(i)?;
         let mut vec = Vec::with_capacity(num_mats as usize);
@@ -125,6 +120,7 @@ impl RpMaterialList {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct RpTexture {
     pub filtering: TextureFilteringMode,
     pub addressing: [TextureAddressingMode; 2],
@@ -132,7 +128,7 @@ pub struct RpTexture {
 }
 
 impl RpTexture {
-    pub fn parse(i: &[u8]) -> IResult<&[u8], Self> {
+    pub fn parse(i: &[u8], _version: u32) -> IResult<&[u8], Self> {
         let (i, filtering) = TextureFilteringMode::parse_le(i)?;
         let (i, addr) = le_u8(i)?;
         let addr_h = TextureAddressingMode::from_u8((addr & 0b11110000) >> 4).unwrap();
@@ -170,7 +166,7 @@ pub enum RasterFormat {
     FormatExtMipmap = 0x8000,     //(mipmaps included)
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct RpRasterPC {
     pub platform_id: u32,
     pub filtering: TextureFilteringMode,
