@@ -23,8 +23,11 @@ macro_rules! parse_struct_and_children {
         let mut struc = None;
         children.retain(|e| match &e.content {
             Self::Struct(vec) => {
-                struc = Some(<$struc>::parse(&vec[..], $version).unwrap().1);
-                false
+                if let Ok(s) = <$struc>::parse(&vec[..], $version) {
+                    struc = Some(s.1);
+                    return false;
+                }
+                true
             }
             _ => true,
         });
