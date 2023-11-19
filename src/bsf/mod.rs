@@ -19,18 +19,18 @@ macro_rules! parse_children {
 
 macro_rules! parse_struct_and_children {
     ($i:ident, $version:ident, $enum:path, $struc:ty) => {{
-        let (i, children) = many0(Chunk::parse)($i)?;
-        let mut res_children = Vec::new();
-        let struc = children.into_iter().find_map(|e| match e.content {
-            Self::Struct(vec) => return Some(<$struc>::parse(&vec[..], $version).unwrap().1),
-            _ => {
-                res_children.push(e);
-                None
+        let (i, mut children) = many0(Chunk::parse)($i)?;
+        let mut struc = None;
+        children.retain(|e| match &e.content {
+            Self::Struct(vec) => {
+                struc = Some(<$struc>::parse(&vec[..], $version).unwrap().1);
+                false
             }
+            _ => true,
         });
 
         // TODO: proper error handling if struc is None
-        Ok((i, ($enum(struc.unwrap()), Some(res_children))))
+        Ok((i, ($enum(struc.unwrap()), Some(children))))
     }};
 }
 
