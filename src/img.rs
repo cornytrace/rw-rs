@@ -24,7 +24,7 @@ impl<'a> Img<'a> {
         if !path.extension().map_or(false, |x| x == "img") {
             bail!("File does not end in .img")
         }
-        let img_file = File::open(path.clone())?;
+        let img_file = File::open(path)?;
         let dir_path = path.with_extension("dir");
         if let Ok(mut dir_file) = File::open(dir_path) {
             return Img::from_v1(img_file, &mut dir_file);
@@ -101,8 +101,6 @@ pub struct DirEnt {
 
 #[cfg(test)]
 mod tests {
-    use anyhow::Result;
-
     use super::*;
 
     #[test]
