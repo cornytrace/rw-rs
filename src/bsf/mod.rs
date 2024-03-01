@@ -41,7 +41,7 @@ macro_rules! parse_struct_and_children {
 #[repr(u32)]
 pub enum ChunkContent {
     Section((u32, Vec<u8>)), // For sections we can't yet parse
-    Struct(Vec<u8>), // The contents of a known section will be in that enum, this is only for child Struct sections of unknown sections
+    Struct(Vec<u8>), // The contents of a known section will be in that enum variant, this is only for child Struct sections of unknown sections
     String(String),
     Extension,
     Camera,
@@ -67,7 +67,12 @@ impl ChunkContent {
             0x00000002 => Ok((
                 &[] as &[u8],
                 (
-                    Self::String(std::str::from_utf8(i).unwrap_or("").to_owned()),
+                    Self::String(
+                        std::str::from_utf8(i)
+                            .unwrap_or("")
+                            .trim_matches('\0')
+                            .to_owned(),
+                    ),
                     None,
                 ),
             )),
