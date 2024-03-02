@@ -30,7 +30,7 @@ pub struct RwTexCoords {
 
 impl RwTexCoords {
     pub fn as_arr(&self) -> [f32; 2] {
-        [self.u / 32.0, self.v / 32.0]
+        [self.u, self.v]
     }
 }
 
