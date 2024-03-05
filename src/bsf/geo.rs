@@ -79,7 +79,7 @@ impl RpGeometry {
         let mut surface_prop = None;
         if version < 0x34000 {
             let s;
-            (i, s) = RpSurfProp::parse(i)?;
+            (i, s) = RpSurfProp::parse_le(i)?;
             surface_prop = Some(s);
         }
 
