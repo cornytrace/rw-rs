@@ -67,7 +67,7 @@ impl<'a> Img<'a> {
     }
 
     pub fn get_entry(&self, name: &str) -> Option<DirEnt> {
-        return self.entries.get(name).cloned();
+        self.entries.get(name).cloned()
     }
 
     pub fn get_file(&mut self, name: &str) -> Option<Vec<u8>> {
@@ -83,14 +83,14 @@ impl<'a> Img<'a> {
     }
 }
 
-#[derive(BinRead)]
+#[derive(BinRead, Clone, Debug)]
 #[brw(little)]
 pub struct DirList {
     #[br(parse_with = until_eof)]
     pub entries: Vec<DirEnt>,
 }
 
-#[derive(BinRead, Clone)]
+#[derive(BinRead, Clone, Debug)]
 #[brw(little)]
 pub struct DirEnt {
     pub offset: u32,
