@@ -125,7 +125,7 @@ impl RpMaterialList {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct RpTexture {
     pub filtering: TextureFilteringMode,
     pub addressing: [TextureAddressingMode; 2],
@@ -153,7 +153,7 @@ impl RpTexture {
     }
 }
 
-#[derive(Debug, Nom, FromPrimitive)]
+#[derive(Clone, Copy, Debug, Nom, FromPrimitive)]
 #[repr(u32)]
 pub enum RasterFormat {
     FormatDefault = 0x0000,

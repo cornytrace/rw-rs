@@ -20,7 +20,7 @@ impl RpTriangle {
     }
 }
 
-#[derive(Clone, Debug, Nom)]
+#[derive(Clone, Copy, Debug, Nom)]
 pub struct RwV3d {
     pub x: f32,
     pub y: f32,
@@ -33,7 +33,7 @@ impl RwV3d {
     }
 }
 
-#[derive(Clone, Debug, Nom)]
+#[derive(Clone, Copy, Debug, Nom)]
 pub struct RwSphere {
     pub pos: RwV3d,
     pub radius: f32,
